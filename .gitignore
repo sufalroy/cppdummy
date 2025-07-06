@@ -47,9 +47,8 @@ install_manifest.txt
 compile_commands.json
 CTestTestfile.cmake
 
-# Dependency directories
-external/*
-!external/CMakeLists.txt
+# Dependency cache directories
+.cpm-cache
 
 # Debugging files
 *.dSYM/

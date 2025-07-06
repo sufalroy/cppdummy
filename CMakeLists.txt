@@ -1,82 +1,67 @@
-cmake_minimum_required(VERSION 3.21)
+cmake_minimum_required(VERSION 3.27)
+
+include(cmake/PreventInSourceBuilds.cmake)
 
 project(cppdummy
-        VERSION 0.1.0
-        DESCRIPTION "A cpp project for dummies"
+        VERSION 0.0.1
+        DESCRIPTION "A modern C++ project for dummies"
         HOMEPAGE_URL "https://github.com/sufalroy/cppdummy.git"
-        LANGUAGES C CXX
+        LANGUAGES CXX C
 )
 
-set(CMAKE_CXX_STANDARD 23)
+if (NOT DEFINED CMAKE_CXX_STANDARD)
+    set(CMAKE_CXX_STANDARD 23)
+endif ()
+
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+include(ProjectOptions.cmake)
+cppdummy_setup_options()
+cppdummy_global_options()
 
-if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Build type" FORCE)
-endif()
-message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
+include(Dependencies.cmake)
+cppdummy_setup_dependencies()
 
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+cppdummy_local_options()
+
+set(CMAKE_CXX_VISIBILITY_PRESET hidden)
+set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
+
+target_compile_features(cppdummy_options INTERFACE cxx_std_${CMAKE_CXX_STANDARD})
+
+add_library(cppdummy::cppdummy_options ALIAS cppdummy_options)
+add_library(cppdummy::cppdummy_warnings ALIAS cppdummy_warnings)
+
+add_subdirectory(src)
+
+if (NOT PROJECT_IS_TOP_LEVEL)
+    return()
+endif ()
 
 if(MSVC)
-    add_compile_options(/W4 /WX /permissive- /Zc:preprocessor /Zc:__cplusplus)
-else()
-    add_compile_options(
-        -Wall 
-        -Wextra 
-        -Wpedantic 
-        -Werror
-        -Wconversion
-        -Wshadow
-        -Wnon-virtual-dtor
-        -Wold-style-cast
-        -Wcast-align
-        -Wunused
-        -Woverloaded-virtual
-        -Wnull-dereference
-    )
-    
-    if(CMAKE_BUILD_TYPE STREQUAL "Release")
-        add_compile_options(-O3)
-    endif()
+    get_all_installable_targets(all_targets)
+    message("all_targets=${all_targets}")
+    set_target_properties(${all_targets} PROPERTIES VS_DEBUGGER_ENVIRONMENT "PATH=$(VC_ExecutablePath_x64);%PATH%")
 endif()
 
-include(ExternalDependencies)
+set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT intro)
 
-file(GLOB_RECURSE HEADER_FILES 
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/*.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/*.hpp
-)
-file(GLOB_RECURSE SOURCE_FILES 
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cxx
-)
+if (CMAKE_SKIP_INSTALL_RULES)
+    return()
+endif ()
 
-add_executable(${PROJECT_NAME} ${SOURCE_FILES} ${HEADER_FILES})
+include(cmake/PackageProject.cmake)
 
-target_include_directories(${PROJECT_NAME} 
-    PUBLIC 
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:include>
+cppdummy_package_project(
+        TARGETS
+        intro
+        cppdummy_options
+        cppdummy_warnings
 )
 
-target_compile_definitions(${PROJECT_NAME} 
-    PRIVATE 
-        $<$<CONFIG:Debug>:DEBUG>
-        $<$<CONFIG:Release>:NDEBUG>
+set(CPACK_PACKAGE_FILE_NAME
+        "${CMAKE_PROJECT_NAME}-${CMAKE_PROJECT_VERSION}-${GIT_SHORT_SHA}-${CMAKE_SYSTEM_NAME}-${CMAKE_BUILD_TYPE}-${CMAKE_CXX_COMPILER_ID}-${CMAKE_CXX_COMPILER_VERSION}"
 )
 
-set_target_properties(${PROJECT_NAME} PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
-    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
-    ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
-)
-
-install(TARGETS ${PROJECT_NAME}
-    RUNTIME DESTINATION bin
-    LIBRARY DESTINATION lib
-    ARCHIVE DESTINATION lib
-)
-install(DIRECTORY include/ DESTINATION include)
+include(CPack)
