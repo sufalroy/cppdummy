@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.27)
+cmake_minimum_required(VERSION 3.22)
 
 include(cmake/PreventInSourceBuilds.cmake)
 
@@ -10,7 +10,7 @@ project(cppdummy
 )
 
 if (NOT DEFINED CMAKE_CXX_STANDARD)
-    set(CMAKE_CXX_STANDARD 23)
+    set(CMAKE_CXX_STANDARD 20)
 endif ()
 
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
