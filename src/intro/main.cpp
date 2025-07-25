@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -404,6 +405,90 @@ private:
     }
   }
 
+  void CreateGraphicsPipeline()
+  {
+    auto shaderCode = ReadFile("/home/dev/Laboratory/cppdummy/src/intro/shaders/slang.spv");
+
+    vk::raii::ShaderModule shaderModule = CreateShaderModule(shaderCode);
+
+    vk::PipelineShaderStageCreateInfo vertShaderStageInfo{};
+    vertShaderStageInfo.stage = vk::ShaderStageFlagBits::eVertex;
+    vertShaderStageInfo.module = shaderModule;
+    vertShaderStageInfo.pName = "vertMain";
+    
+    vk::PipelineShaderStageCreateInfo fragShaderStageInfo{};
+    fragShaderStageInfo.stage = vk::ShaderStageFlagBits::eFragment;
+    fragShaderStageInfo.module = shaderModule;
+    fragShaderStageInfo.pName = "fragMain";
+
+    // std::vector<vk::PipelineShaderStageCreateInfo> shaderStages = {vertShaderStageInfo, fragShaderStageInfo};
+
+    // vk::PipelineVertexInputStateCreateInfo vertexInputInfo{};
+    
+    vk::PipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.topology = vk::PrimitiveTopology::eTriangleList;
+    
+    vk::PipelineViewportStateCreateInfo viewportState{};
+    viewportState.viewportCount = 1;
+    viewportState.scissorCount = 1;
+
+    vk::PipelineRasterizationStateCreateInfo rasterizer{};
+    rasterizer.depthClampEnable = VK_FALSE;
+    rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    rasterizer.polygonMode = vk::PolygonMode::eFill;
+    rasterizer.cullMode = vk::CullModeFlagBits::eBack;
+    rasterizer.frontFace = vk::FrontFace::eClockwise;
+    rasterizer.depthBiasEnable = VK_FALSE;
+    rasterizer.depthBiasSlopeFactor = 1.0F;
+    rasterizer.lineWidth = 1.0F;
+
+    vk::PipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.rasterizationSamples = vk::SampleCountFlagBits::e1;
+    multisampling.sampleShadingEnable = VK_FALSE;
+
+    vk::PipelineColorBlendAttachmentState colorBlendAttachment{};
+    colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG
+                                          | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
+    colorBlendAttachment.blendEnable = VK_FALSE;
+
+    vk::PipelineColorBlendStateCreateInfo colorBlending{};
+    colorBlending.logicOpEnable = VK_FALSE;
+    colorBlending.logicOp = vk::LogicOp::eCopy;
+    colorBlending.attachmentCount = 1;
+    colorBlending.pAttachments = &colorBlendAttachment;
+
+    std::vector dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
+  
+    vk::PipelineDynamicStateCreateInfo dynamicState{};
+    dynamicState.dynamicStateCount = static_cast<std::uint32_t>(dynamicStates.size());
+    dynamicState.pDynamicStates = dynamicStates.data();
+
+    vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutInfo);
+  }
+
+  [[nodiscard]] vk::raii::ShaderModule CreateShaderModule(const std::vector<char> &code) const
+  {
+    vk::ShaderModuleCreateInfo createInfo{};
+    createInfo.codeSize = code.size();
+    createInfo.pCode = static_cast<const std::uint32_t *>(static_cast<const void *>(code.data()));
+    return {device, createInfo};
+  }
+  
+  static std::vector<char> ReadFile(const std::string_view& filename) {
+    std::ifstream file(std::string(filename), std::ios::ate | std::ios::binary);
+    
+    if (!file.is_open()) {
+      throw std::runtime_error("Failed to open file: " + std::string(filename));
+    }
+    
+    std::size_t size = static_cast<std::size_t>(file.tellg());
+    std::vector<char> buffer(size);
+    file.seekg(0, std::ios::beg);
+    file.read(buffer.data(), static_cast<std::streamsize>(size));
+    return buffer;
+  }
+
   void InitVulkan()
   {
     CreateInstance();
@@ -413,6 +498,7 @@ private:
     CreateLogicalDevice();
     CreateSwapChain();
     CreateImageViews();
+    CreateGraphicsPipeline();
   }
 
   void MainLoop() const
@@ -443,8 +529,9 @@ private:
   std::vector<vk::Image> swapChainImages;
   vk::Format swapChainImageFormat = vk::Format::eUndefined;
   vk::Extent2D swapChainExtent;
-
   std::vector<vk::raii::ImageView> swapChainImageViews;
+
+  vk::raii::PipelineLayout pipelineLayout = nullptr;
 
   std::vector<const char *> requiredDeviceExtension = { vk::KHRSwapchainExtensionName,
     vk::KHRSpirv14ExtensionName,
