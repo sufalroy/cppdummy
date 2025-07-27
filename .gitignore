@@ -10,6 +10,7 @@ cmake-build-*/
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
+.vs
 *.swp
 *~
 .DS_Store

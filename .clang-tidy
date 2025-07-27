@@ -19,12 +19,14 @@ Checks: "*,
         -misc-include-cleaner,
         -bugprone-exception-escape,
         -portability-template-virtual-member-function,
-        -readability-identifier-length
+        -readability-identifier-length,
+        -hicpp-signed-bitwise,
+        -cppcoreguidelines-pro-type-reinterpret-cast,
+        -bugprone-bitwise-pointer-cast
 "
 WarningsAsErrors: ''
 HeaderFilterRegex: ''
 FormatStyle: none
-
 CheckOptions:
   - key: readability-identifier-length.IgnoredVariableNames
     value: 'x|y|z|i|j|k'
