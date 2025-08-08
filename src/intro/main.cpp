@@ -20,6 +20,9 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+#include "vec.hpp"
+
+
 constexpr std::uint32_t WIDTH = 800;
 constexpr std::uint32_t HEIGHT = 600;
 
@@ -54,6 +57,16 @@ struct SwapChainSupportDetails
   std::vector<vk::PresentModeKHR> presentModes;
 };
 
+struct ImageLayoutTransition
+{
+  vk::ImageLayout oldLayout;
+  vk::ImageLayout newLayout;
+  vk::AccessFlags2 srcAccessMask;
+  vk::AccessFlags2 dstAccessMask;
+  vk::PipelineStageFlags2 srcStageMask;
+  vk::PipelineStageFlags2 dstStageMask;
+};
+
 struct FrameData
 {
   vk::raii::Fence inFlightFence;
@@ -65,14 +78,36 @@ struct FrameData
     {}
 };
 
-struct ImageLayoutTransition
+struct Vertex 
 {
-  vk::ImageLayout oldLayout;
-  vk::ImageLayout newLayout;
-  vk::AccessFlags2 srcAccessMask;
-  vk::AccessFlags2 dstAccessMask;
-  vk::PipelineStageFlags2 srcStageMask;
-  vk::PipelineStageFlags2 dstStageMask;
+  vec2 pos;
+  vec3 color;
+
+  static vk::VertexInputBindingDescription GetBindingDescription()
+  {
+    vk::VertexInputBindingDescription bindingDescription{};
+    bindingDescription.binding = 0;
+    bindingDescription.stride = sizeof(Vertex);
+    bindingDescription.inputRate = vk::VertexInputRate::eVertex;
+    return bindingDescription;
+  }
+
+  static std::array<vk::VertexInputAttributeDescription, 2> GetAttributeDescriptions()
+  {
+    std::array<vk::VertexInputAttributeDescription, 2> attributeDescriptions{};
+
+    attributeDescriptions[0].binding = 0;
+    attributeDescriptions[0].location = 0;
+    attributeDescriptions[0].format = vk::Format::eR32G32Sfloat;
+    attributeDescriptions[0].offset = offsetof(Vertex, pos);
+
+    attributeDescriptions[1].binding = 0;
+    attributeDescriptions[1].location = 1;
+    attributeDescriptions[1].format = vk::Format::eR32G32B32Sfloat;
+    attributeDescriptions[1].offset = offsetof(Vertex, color);
+
+    return attributeDescriptions;
+  }
 };
 
 class HelloVulkan
@@ -456,7 +491,14 @@ private:
 
     std::array<vk::PipelineShaderStageCreateInfo, 2> shaderStages = { vertShaderStageInfo, fragShaderStageInfo };
 
-    const vk::PipelineVertexInputStateCreateInfo vertexInputInfo{};
+    auto bindingDescription = Vertex::GetBindingDescription();
+    auto attributeDescriptions = Vertex::GetAttributeDescriptions();
+
+    vk::PipelineVertexInputStateCreateInfo vertexInputInfo{};
+    vertexInputInfo.vertexBindingDescriptionCount = 1;
+    vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+    vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
+    vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
 
     vk::PipelineInputAssemblyStateCreateInfo inputAssembly{};
     inputAssembly.topology = vk::PrimitiveTopology::eTriangleList;
@@ -617,6 +659,7 @@ private:
 
     cmdBuffer.beginRendering(renderingInfo);
     cmdBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
+    cmdBuffer.bindVertexBuffers(0, *vertexBuffer, { 0 });
 
     const vk::Viewport viewport(
       0.0F, 0.0F, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0F, 1.0F);
@@ -625,7 +668,7 @@ private:
     const vk::Rect2D scissor(vk::Offset2D(0, 0), swapChainExtent);
     cmdBuffer.setScissor(0, scissor);
 
-    cmdBuffer.draw(3, 1, 0, 0);
+    cmdBuffer.draw(static_cast<std::uint32_t>(vertices.size()), 1, 0, 0);
     cmdBuffer.endRendering();
 
     TransitionImageLayout(cmdBuffer,
@@ -639,7 +682,99 @@ private:
 
     cmdBuffer.end();
   }
+  
+  void CreateBuffer(vk::DeviceSize size, 
+                    vk::BufferUsageFlags usage, 
+                    vk::MemoryPropertyFlags properties,
+                    vk::raii::Buffer& buffer,
+                    vk::raii::DeviceMemory& bufferMemory)
+  {
+    vk::BufferCreateInfo bufferCreateInfo{};
+    bufferCreateInfo.size = size;
+    bufferCreateInfo.usage = usage;
+    bufferCreateInfo.sharingMode = vk::SharingMode::eExclusive;
 
+    buffer = vk::raii::Buffer(device, bufferCreateInfo);
+
+    const vk::MemoryRequirements memoryRequirements = buffer.getMemoryRequirements();
+    
+    vk::MemoryAllocateInfo memoryAllocateInfo{};
+    memoryAllocateInfo.allocationSize = memoryRequirements.size;
+    memoryAllocateInfo.memoryTypeIndex = FindMemoryType(memoryRequirements.memoryTypeBits, properties);
+
+    bufferMemory = vk::raii::DeviceMemory(device, memoryAllocateInfo);
+    buffer.bindMemory(*bufferMemory, 0);
+  }
+  
+  void CreateVertexBuffer()
+  {
+    const vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
+    
+    vk::raii::Buffer stagingBuffer = nullptr;
+    vk::raii::DeviceMemory stagingBufferMemory = nullptr;
+    CreateBuffer(bufferSize, 
+                 vk::BufferUsageFlagBits::eTransferSrc, 
+                 vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+                 stagingBuffer, 
+                 stagingBufferMemory);
+    
+    void* dataStaging = stagingBufferMemory.mapMemory(0, bufferSize);
+    std::memcpy(dataStaging, vertices.data(), static_cast<std::size_t>(bufferSize));
+    stagingBufferMemory.unmapMemory();
+    
+    CreateBuffer(bufferSize,
+                 vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
+                 vk::MemoryPropertyFlagBits::eDeviceLocal,
+                 vertexBuffer,
+                 vertexBufferMemory);
+                 
+    CopyBuffer(stagingBuffer, vertexBuffer, bufferSize);
+  }
+
+  void CopyBuffer(const vk::raii::Buffer& srcBuffer, 
+                  const vk::raii::Buffer& dstBuffer, 
+                  vk::DeviceSize size) 
+  {
+    vk::CommandBufferAllocateInfo allocInfo{};
+    allocInfo.commandPool = *commandPool;
+    allocInfo.level = vk::CommandBufferLevel::ePrimary;
+    allocInfo.commandBufferCount = 1;
+    
+    auto commandBuffers = device.allocateCommandBuffers(allocInfo);
+    vk::raii::CommandBuffer commandCopyBuffer = std::move(commandBuffers[0]);
+    
+    vk::CommandBufferBeginInfo beginInfo{};
+    beginInfo.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
+    
+    commandCopyBuffer.begin(beginInfo);
+    
+    vk::BufferCopy copyRegion{};
+    copyRegion.srcOffset = 0;
+    copyRegion.dstOffset = 0;
+    copyRegion.size = size;
+    
+    commandCopyBuffer.copyBuffer(*srcBuffer, *dstBuffer, copyRegion);
+    commandCopyBuffer.end();
+    
+    vk::SubmitInfo submitInfo{};
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &(*commandCopyBuffer);
+    
+    graphicsQueue.submit(submitInfo, nullptr);
+    graphicsQueue.waitIdle();
+  }
+
+  [[nodiscard]] std::uint32_t FindMemoryType(std::uint32_t typeFilter, vk::MemoryPropertyFlags properties)
+  {
+    vk::PhysicalDeviceMemoryProperties memProperties = physicalDevice.getMemoryProperties();
+    for (std::uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+      if (((typeFilter & (1U << i)) != 0U) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+        return i;
+      }
+    }
+    throw std::runtime_error("Failed to find suitable memory type");
+  }
+  
   void CreateSyncObjects()
   {
     if (frames.empty()) {
@@ -669,6 +804,7 @@ private:
     CreateImageViews();
     CreateGraphicsPipeline();
     CreateCommandPool();
+    CreateVertexBuffer();
     CreateSyncObjects();
   }
 
@@ -783,7 +919,6 @@ private:
     CreateSyncObjects();
   }
 
-
   static void FramebufferResizeCallback(GLFWwindow *window, int /*width*/, int /*height*/)
   {
     auto *app = reinterpret_cast<HelloVulkan *>(glfwGetWindowUserPointer(window));
@@ -823,6 +958,16 @@ private:
 
   vk::raii::PipelineLayout pipelineLayout = nullptr;
   vk::raii::Pipeline graphicsPipeline = nullptr;
+
+  vk::raii::Buffer vertexBuffer = nullptr;
+  vk::raii::DeviceMemory vertexBufferMemory = nullptr;
+  
+  static constexpr float VERTEX_HALF = 0.5F;
+  std::vector<Vertex> vertices = {
+    { { 0.0F, -VERTEX_HALF }, { 1.0F, 0.0F, 0.0F } },
+    { { VERTEX_HALF, VERTEX_HALF }, { 0.0F, 1.0F, 0.0F } },
+    { { -VERTEX_HALF, VERTEX_HALF }, { 0.0F, 0.0F, 1.0F } }
+  };
 
   vk::raii::CommandPool commandPool = nullptr;
 
