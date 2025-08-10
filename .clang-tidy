@@ -22,7 +22,9 @@ Checks: "*,
         -readability-identifier-length,
         -hicpp-signed-bitwise,
         -cppcoreguidelines-pro-type-reinterpret-cast,
-        -bugprone-bitwise-pointer-cast
+        -bugprone-bitwise-pointer-cast,
+        --header-filter=^(?!.*gstreamer).*,
+        -checks=-misc-header-include-cycle
 "
 WarningsAsErrors: ''
 HeaderFilterRegex: ''

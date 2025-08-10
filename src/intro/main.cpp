@@ -73,12 +73,12 @@ struct FrameData
   vk::raii::CommandBuffer commandBuffer;
 
   FrameData(const vk::raii::Device &device, vk::raii::CommandBuffer &&cmdBuffer)
-        : inFlightFence(device, vk::FenceCreateInfo{ vk::FenceCreateFlagBits::eSignaled }),
-          commandBuffer(std::move(cmdBuffer))
-    {}
+    : inFlightFence(device, vk::FenceCreateInfo{ vk::FenceCreateFlagBits::eSignaled }),
+      commandBuffer(std::move(cmdBuffer))
+  {}
 };
 
-struct Vertex 
+struct Vertex
 {
   vec2 pos;
   vec3 color;
@@ -475,7 +475,7 @@ private:
 
   void CreateGraphicsPipeline()
   {
-    auto shaderCode = ReadFile("/home/dev/Laboratory/cppdummy/src/intro/shaders/slang.spv");
+    auto shaderCode = ReadFile("C:/Laboratory/cpp-workspace/cppdummy/src/intro/shaders/slang.spv");
 
     const vk::raii::ShaderModule shaderModule = CreateShaderModule(shaderCode);
 
@@ -682,12 +682,12 @@ private:
 
     cmdBuffer.end();
   }
-  
-  void CreateBuffer(vk::DeviceSize size, 
-                    vk::BufferUsageFlags usage, 
-                    vk::MemoryPropertyFlags properties,
-                    vk::raii::Buffer& buffer,
-                    vk::raii::DeviceMemory& bufferMemory)
+
+  void CreateBuffer(vk::DeviceSize size,
+    vk::BufferUsageFlags usage,
+    vk::MemoryPropertyFlags properties,
+    vk::raii::Buffer &buffer,
+    vk::raii::DeviceMemory &bufferMemory)
   {
     vk::BufferCreateInfo bufferCreateInfo{};
     bufferCreateInfo.size = size;
@@ -697,7 +697,7 @@ private:
     buffer = vk::raii::Buffer(device, bufferCreateInfo);
 
     const vk::MemoryRequirements memoryRequirements = buffer.getMemoryRequirements();
-    
+
     vk::MemoryAllocateInfo memoryAllocateInfo{};
     memoryAllocateInfo.allocationSize = memoryRequirements.size;
     memoryAllocateInfo.memoryTypeIndex = FindMemoryType(memoryRequirements.memoryTypeBits, properties);
@@ -705,61 +705,59 @@ private:
     bufferMemory = vk::raii::DeviceMemory(device, memoryAllocateInfo);
     buffer.bindMemory(*bufferMemory, 0);
   }
-  
+
   void CreateVertexBuffer()
   {
     const vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
-    
+
     vk::raii::Buffer stagingBuffer = nullptr;
     vk::raii::DeviceMemory stagingBufferMemory = nullptr;
-    CreateBuffer(bufferSize, 
-                 vk::BufferUsageFlagBits::eTransferSrc, 
-                 vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-                 stagingBuffer, 
-                 stagingBufferMemory);
-    
-    void* dataStaging = stagingBufferMemory.mapMemory(0, bufferSize);
+    CreateBuffer(bufferSize,
+      vk::BufferUsageFlagBits::eTransferSrc,
+      vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+      stagingBuffer,
+      stagingBufferMemory);
+
+    void *dataStaging = stagingBufferMemory.mapMemory(0, bufferSize);
     std::memcpy(dataStaging, vertices.data(), static_cast<std::size_t>(bufferSize));
     stagingBufferMemory.unmapMemory();
-    
+
     CreateBuffer(bufferSize,
-                 vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
-                 vk::MemoryPropertyFlagBits::eDeviceLocal,
-                 vertexBuffer,
-                 vertexBufferMemory);
-                 
+      vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
+      vk::MemoryPropertyFlagBits::eDeviceLocal,
+      vertexBuffer,
+      vertexBufferMemory);
+
     CopyBuffer(stagingBuffer, vertexBuffer, bufferSize);
   }
 
-  void CopyBuffer(const vk::raii::Buffer& srcBuffer, 
-                  const vk::raii::Buffer& dstBuffer, 
-                  vk::DeviceSize size) 
+  void CopyBuffer(const vk::raii::Buffer &srcBuffer, const vk::raii::Buffer &dstBuffer, vk::DeviceSize size)
   {
     vk::CommandBufferAllocateInfo allocInfo{};
     allocInfo.commandPool = *commandPool;
     allocInfo.level = vk::CommandBufferLevel::ePrimary;
     allocInfo.commandBufferCount = 1;
-    
+
     auto commandBuffers = device.allocateCommandBuffers(allocInfo);
     vk::raii::CommandBuffer commandCopyBuffer = std::move(commandBuffers[0]);
-    
+
     vk::CommandBufferBeginInfo beginInfo{};
     beginInfo.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
-    
+
     commandCopyBuffer.begin(beginInfo);
-    
+
     vk::BufferCopy copyRegion{};
     copyRegion.srcOffset = 0;
     copyRegion.dstOffset = 0;
     copyRegion.size = size;
-    
+
     commandCopyBuffer.copyBuffer(*srcBuffer, *dstBuffer, copyRegion);
     commandCopyBuffer.end();
-    
+
     vk::SubmitInfo submitInfo{};
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &(*commandCopyBuffer);
-    
+
     graphicsQueue.submit(submitInfo, nullptr);
     graphicsQueue.waitIdle();
   }
@@ -774,7 +772,7 @@ private:
     }
     throw std::runtime_error("Failed to find suitable memory type");
   }
-  
+
   void CreateSyncObjects()
   {
     if (frames.empty()) {
@@ -842,8 +840,8 @@ private:
       std::numeric_limits<std::uint64_t>::max(), *imageAvailableSemaphores[semaphoreIndex], nullptr);
 
     if (acquireResult.first == vk::Result::eErrorOutOfDateKHR) {
-        RecreateSwapChain();
-        return;
+      RecreateSwapChain();
+      return;
     }
 
     if (acquireResult.first != vk::Result::eSuccess && acquireResult.first != vk::Result::eSuboptimalKHR) {
@@ -875,11 +873,12 @@ private:
     presentInfoKHR.pImageIndices = &imageIndex;
     auto presentResult = presentQueue.presentKHR(presentInfoKHR);
 
-    if (presentResult == vk::Result::eErrorOutOfDateKHR || presentResult == vk::Result::eSuboptimalKHR || framebufferResized) {
-        framebufferResized = false;
-        RecreateSwapChain();
+    if (presentResult == vk::Result::eErrorOutOfDateKHR || presentResult == vk::Result::eSuboptimalKHR
+        || framebufferResized) {
+      framebufferResized = false;
+      RecreateSwapChain();
     } else if (presentResult != vk::Result::eSuccess) {
-        throw std::runtime_error("Failed to present swapchain image");
+      throw std::runtime_error("Failed to present swapchain image");
     }
 
     semaphoreIndex = static_cast<uint32_t>((semaphoreIndex + 1) % imageAvailableSemaphores.size());
@@ -961,13 +960,11 @@ private:
 
   vk::raii::Buffer vertexBuffer = nullptr;
   vk::raii::DeviceMemory vertexBufferMemory = nullptr;
-  
+
   static constexpr float VERTEX_HALF = 0.5F;
-  std::vector<Vertex> vertices = {
-    { { 0.0F, -VERTEX_HALF }, { 1.0F, 0.0F, 0.0F } },
+  std::vector<Vertex> vertices = { { { 0.0F, -VERTEX_HALF }, { 1.0F, 0.0F, 0.0F } },
     { { VERTEX_HALF, VERTEX_HALF }, { 0.0F, 1.0F, 0.0F } },
-    { { -VERTEX_HALF, VERTEX_HALF }, { 0.0F, 0.0F, 1.0F } }
-  };
+    { { -VERTEX_HALF, VERTEX_HALF }, { 0.0F, 0.0F, 1.0F } } };
 
   vk::raii::CommandPool commandPool = nullptr;
 

@@ -22,21 +22,3 @@ target_link_libraries(intro
         glfw
         Vulkan::Vulkan
 )
-
-if (WIN32)
-    target_compile_definitions(intro PRIVATE
-            NOMINMAX
-            WIN32_LEAN_AND_MEAN
-            _CRT_SECURE_NO_WARNINGS
-    )
-
-    if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-        set_target_properties(intro PROPERTIES
-                WIN32_EXECUTABLE FALSE
-        )
-    else ()
-        set_target_properties(intro PROPERTIES
-                WIN32_EXECUTABLE TRUE
-        )
-    endif ()
-endif ()
