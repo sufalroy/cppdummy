@@ -9,19 +9,35 @@
 
 #include <gst/gst.h>
 
-constexpr std::string_view DEFAULT_URI = "https://gstreamer.freedesktop.org/data/media/sintel_trailer-480p.webm";
+constexpr std::string_view DEFAULT_URI = "rtsp://view:Urtan%401122@128.185.47.11:554/Streaming/Channels/101";
 
 namespace gst {
 
-struct GObjectDeleter
+template<typename T> struct GstDeleter
 {
-  void operator()(void *obj) const noexcept
+  void operator()(T *obj) const noexcept
   {
-    if (obj != nullptr) { gst_object_unref(static_cast<GstObject *>(obj)); }
+    if (obj != nullptr) { gst_object_unref(GST_OBJECT(obj)); }
   }
 };
 
-struct GMessageDeleter
+struct GstCapsDeleter
+{
+  void operator()(GstCaps *caps) const noexcept
+  {
+    if (caps != nullptr) { gst_caps_unref(caps); }
+  }
+};
+
+struct GstBufferDeleter
+{
+  void operator()(GstBuffer *buffer) const noexcept
+  {
+    if (buffer != nullptr) { gst_buffer_unref(buffer); }
+  }
+};
+
+struct GstMessageDeleter
 {
   void operator()(GstMessage *msg) const noexcept
   {
@@ -45,11 +61,57 @@ struct GCharDeleter
   }
 };
 
-using GstElementPtr = std::unique_ptr<GstElement, GObjectDeleter>;
-using GstBusPtr = std::unique_ptr<GstBus, GObjectDeleter>;
-using GstMessagePtr = std::unique_ptr<GstMessage, GMessageDeleter>;
-using GstErrorPtr = std::unique_ptr<GError, GErrorDeleter>;
-using GstCharPtr = std::unique_ptr<gchar, GCharDeleter>;
+using GstObjectPtr = std::unique_ptr<GstObject, GstDeleter<GstObject>>;
+using GstElementPtr = std::unique_ptr<GstElement, GstDeleter<GstElement>>;
+using GstPipelinePtr = std::unique_ptr<GstPipeline, GstDeleter<GstPipeline>>;
+using GstBinPtr = std::unique_ptr<GstBin, GstDeleter<GstBin>>;
+using GstBusPtr = std::unique_ptr<GstBus, GstDeleter<GstBus>>;
+using GstPadPtr = std::unique_ptr<GstPad, GstDeleter<GstPad>>;
+using GstCapsPtr = std::unique_ptr<GstCaps, GstCapsDeleter>;
+using GstBufferPtr = std::unique_ptr<GstBuffer, GstBufferDeleter>;
+using GstMessagePtr = std::unique_ptr<GstMessage, GstMessageDeleter>;
+using GErrorPtr = std::unique_ptr<GError, GErrorDeleter>;
+using GCharPtr = std::unique_ptr<gchar, GCharDeleter>;
+
+template<typename T = GstElement>
+[[nodiscard]] inline std::unique_ptr<T, GstDeleter<T>> make_element(const char *factory_name,
+  const char *name = nullptr)
+{
+  static_assert(std::is_base_of_v<GstElement, T>);
+  GstElement *element = gst_element_factory_make(factory_name, name);
+  return element ? std::unique_ptr<T, GstDeleter<T>>(reinterpret_cast<T *>(element)) : nullptr;
+}
+
+[[nodiscard]] inline GstPipelinePtr make_pipeline(const char *name = nullptr)
+{
+  GstPipeline *pipeline = GST_PIPELINE(gst_pipeline_new(name));
+  return GstPipelinePtr(pipeline);
+}
+
+[[nodiscard]] inline GstBinPtr make_bin(const char *name = nullptr)
+{
+  GstBin *bin = GST_BIN(gst_bin_new(name));
+  return GstBinPtr(bin);
+}
+
+[[nodiscard]] inline GstCapsPtr make_caps(const char *caps_string)
+{
+  return GstCapsPtr(gst_caps_from_string(caps_string));
+}
+
+[[nodiscard]] inline GstBusPtr get_bus(GstElement *element) { return GstBusPtr(gst_element_get_bus(element)); }
+
+[[nodiscard]] inline GstPadPtr get_static_pad(GstElement *element, const char *name)
+{
+  return GstPadPtr(gst_element_get_static_pad(element, name));
+}
+
+[[nodiscard]] inline GstBufferPtr make_buffer(gsize size = 0)
+{
+  return GstBufferPtr(gst_buffer_new_allocate(nullptr, size, nullptr));
+}
+
+[[nodiscard]] inline GCharPtr wrap_gchar(gchar *str) { return GCharPtr(str); }
 
 enum class PlaybackResult : std::uint8_t { Success, Error, EndOfStream };
 
@@ -80,7 +142,8 @@ public:
       return false;
     }
 
-    if (gst_element_set_state(pipeline_.get(), GST_STATE_PLAYING) == GST_STATE_CHANGE_FAILURE) {
+    const auto state_result = gst_element_set_state(GST_ELEMENT(pipeline_.get()), GST_STATE_PLAYING);
+    if (state_result == GST_STATE_CHANGE_FAILURE) {
       std::cerr << "Failed to start playback\n";
       return false;
     }
@@ -91,7 +154,7 @@ public:
 
   void stop() noexcept
   {
-    if (pipeline_ != nullptr) { gst_element_set_state(pipeline_.get(), GST_STATE_NULL); }
+    if (pipeline_ != nullptr) { gst_element_set_state(GST_ELEMENT(pipeline_.get()), GST_STATE_NULL); }
   }
 
   [[nodiscard]] gst::PlaybackResult wait_for_completion() noexcept
@@ -104,7 +167,8 @@ public:
     std::cout << "Waiting for playback to complete...\n";
 
     while (true) {
-      auto message = gst::GstMessagePtr{ gst_bus_timed_pop_filtered(bus_.get(), GST_CLOCK_TIME_NONE, GST_MESSAGE_EOS) };
+      constexpr auto message_types = static_cast<GstMessageType>(GST_MESSAGE_EOS);
+      auto message = gst::GstMessagePtr{ gst_bus_timed_pop_filtered(bus_.get(), GST_CLOCK_TIME_NONE, message_types) };
 
       if (message == nullptr) {
         std::cerr << "Unexpected null message\n";
@@ -125,15 +189,15 @@ private:
     GstElement *raw_pipeline = gst_parse_launch(pipeline_desc.c_str(), &error);
 
     if (error != nullptr) {
-      const gst::GstErrorPtr err_ptr(error);
+      const gst::GErrorPtr err_ptr(error);
       throw std::runtime_error(std::format("Failed to create pipeline: {}", error->message));
     }
 
     if (raw_pipeline == nullptr) { throw std::runtime_error("Failed to create pipeline"); }
 
-    pipeline_ = gst::GstElementPtr{ raw_pipeline };
+    pipeline_ = gst::GstPipelinePtr{ GST_PIPELINE(raw_pipeline) };
 
-    GstBus *raw_bus = gst_element_get_bus(pipeline_.get());
+    GstBus *raw_bus = gst_element_get_bus(raw_pipeline);
     if (raw_bus == nullptr) { throw std::runtime_error("Failed to get pipeline bus"); }
 
     bus_ = gst::GstBusPtr{ raw_bus };
@@ -164,8 +228,8 @@ private:
     gchar *raw_debug = nullptr;
     gst_message_parse_error(msg, &raw_error, &raw_debug);
 
-    const gst::GstErrorPtr error{ raw_error };
-    const gst::GstCharPtr debug{ raw_debug };
+    const gst::GErrorPtr error{ raw_error };
+    const gst::GCharPtr debug{ raw_debug };
 
     return gst::PlaybackError{ .message = error != nullptr ? error->message : "Unknown error",
       .debug_info = debug != nullptr ? debug.get() : "" };
@@ -174,7 +238,9 @@ private:
   void cleanup() noexcept { stop(); }
 
   std::string uri_;
-  gst::GstElementPtr pipeline_;
+  gst::GstPipelinePtr pipeline_;
+  gst::GstElementPtr source_;
+  gst::GstElementPtr sink_;
   gst::GstBusPtr bus_;
 };
 
@@ -201,7 +267,7 @@ int main(int argc, char *argv[])
 
     switch (result) {
     case gst::PlaybackResult::EndOfStream:
-      std::cout << "Playback finished successfully\n";
+      std::cout << "Playbook finished successfully\n";
       break;
     case gst::PlaybackResult::Error:
       std::cout << "Playback ended with error\n";
